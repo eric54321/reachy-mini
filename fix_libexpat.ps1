@@ -7,8 +7,8 @@ own libexpat.dll and crashes pyexpat imports. Renaming the shadowing DLL to .bak
 fixes it; safe to re-run (idempotent).
 
 Usage:
-  .\fix_libexpat.ps1 -PythonEnvRoot "C:\Users\eric5\miniconda3\envs\reachy"
-  .\fix_libexpat.ps1 -PythonEnvRoot "C:\Eric-new\code\github\reach-mini\reachy-mini-mcp\.venv"
+  .\fix_libexpat.ps1 -PythonEnvRoot "C:\Users\<you>\miniconda3\envs\reachy"
+  .\fix_libexpat.ps1 -PythonEnvRoot "..\reachy-mini-mcp\.venv"
 #>
 param(
     [Parameter(Mandatory = $true)]
