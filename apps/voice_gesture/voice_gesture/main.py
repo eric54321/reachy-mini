@@ -33,7 +33,14 @@ def say(reachy_mini: ReachyMini, gestures: GestureLibrary, text: str, voice_id: 
             duration = _wav_duration_seconds(audio_path)
             time.sleep(duration)
         finally:
-            audio_path.unlink(missing_ok=True)
+            try:
+                audio_path.unlink(missing_ok=True)
+            except OSError:
+                # Windows can still hold the file open briefly (e.g. the
+                # LOCAL/GStreamer backend reading it for playback) even after
+                # our duration-based sleep. It's a temp file either way — not
+                # worth failing the whole message over.
+                pass
 
     # A gesture often runs longer than its sentence's audio. Wait for the
     # last one to finish before returning, so callers don't disconnect (or
@@ -173,8 +180,21 @@ def _connection_kwargs() -> dict:
 
 
 if __name__ == "__main__":
+    connection_kwargs = _connection_kwargs()
+
+    if os.environ.get("REACHY_MINI_MODE", "physical") == "sim":
+        # wrapped_run() always passes media_backend itself (from
+        # request_media_backend, read in ReachyMiniApp.__init__), so it can't
+        # be overridden via connection_kwargs without a duplicate-keyword
+        # error. Sim runs on this same machine, so force the LOCAL backend
+        # (GStreamer IPC) here instead of the WEBRTC backend wrapped_run
+        # would otherwise pick — its own "am I local?" check only ever looks
+        # at port 8000, which is blocked on this machine (see SETUP.md), so
+        # it always assumes "remote" for our sim daemon's alternate port.
+        VoiceGesture.request_media_backend = "local"
+
     app = VoiceGesture()
     try:
-        app.wrapped_run(**_connection_kwargs())
+        app.wrapped_run(**connection_kwargs)
     except KeyboardInterrupt:
         app.stop()

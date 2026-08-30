@@ -17,8 +17,14 @@ ENV_KEYS = [
 
 
 @pytest.fixture(autouse=True)
-def clean_env():
-    """Each test starts with none of these vars set, and cleans up after."""
+def clean_env(monkeypatch):
+    """Each test starts with none of these vars set, and cleans up after.
+
+    Also stops _connection_kwargs()'s load_dotenv() from reading a real
+    .env on disk (e.g. one left over from manual sim testing) — these tests
+    only care about the os.environ values they set themselves.
+    """
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)
     saved = {k: os.environ.pop(k, None) for k in ENV_KEYS}
     yield
     for k, v in saved.items():

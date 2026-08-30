@@ -129,5 +129,24 @@ Three small, separately testable pieces:
   not a rewrite. The voice picker's `/voices` list would need to merge in non-Piper voice ids too.
 - Revisit the naive `time.sleep(duration)` sentence-pacing in `say()` if it drifts noticeably
   from actual audio playback with longer messages
-- Sim mode is implemented but not yet tried end-to-end (needs `reachy-mini-daemon --sim
-  --headless --fastapi-port <port>` running locally first)
+- **Sim mode verified end-to-end** (2026-08-30), both audio and visuals:
+  - `reachy-mini-daemon --sim --fastapi-port 8090` (no `--headless`) opens a MuJoCo viewer
+    window on the dev machine's own desktop — confirmed visible.
+  - Sim's audio falls back to the PC's own default speakers (no physical Reachy Mini Audio
+    device) — confirmed audible.
+  - Found and fixed two more real bugs surfaced only by sim mode:
+    - `wrapped_run()` always computes its own `media_backend`/`connection_mode` kwargs
+      internally, so passing them through `_connection_kwargs()` collides (duplicate keyword
+      error). Its own "is the daemon local?" check only ever probes port 8000 (blocked on this
+      machine), so it always picked WEBRTC for our sim daemon's alternate port — which failed
+      outright (`KeyError: Producer reachymini not found`, no signaling route set up for that
+      backend in this setup). Fixed by setting `VoiceGesture.request_media_backend = "local"`
+      before instantiating the app, only in sim mode — that's the one hook `ReachyMiniApp.__init__`
+      reads before `wrapped_run()` runs, so it sidesteps the collision.
+    - The LOCAL backend can still hold the temp WAV file open (Windows file locking) slightly
+      past our duration-based sleep, so `audio_path.unlink()` occasionally raised
+      `PermissionError` — caught now (best-effort cleanup, not worth failing a message over).
+  - `.pytest_cache` note: `test_connection_kwargs.py`'s "no env vars set" test broke once a
+    real `.env` existed on disk (from this sim setup) — fixed by monkeypatching
+    `dotenv.load_dotenv` to a no-op in that test file, so it no longer depends on the
+    developer's actual `.env` being absent.
