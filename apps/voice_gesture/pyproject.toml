@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "voice_gesture"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "reachy-mini",
+    "piper-tts",
+    "requests",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx"]  # httpx: needed by FastAPI's TestClient
+keywords = ["reachy-mini-app"]
+
+[project.entry-points."reachy_mini_apps"]
+voice_gesture = "voice_gesture.main:VoiceGesture"
+
+[tool.setuptools]
+package-dir = { "" = "." }
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools.package-data]
+voice_gesture = ["**/*"] # Also include all non-.py files

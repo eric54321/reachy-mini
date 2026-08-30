@@ -1,0 +1,8 @@
+__pycache__/
+*.egg-info/
+build/
+.pytest_cache/
+
+# Downloaded Piper voice models (large binaries, fetched on demand via
+# `python -m piper.download_voices <voice_id> --download-dir voices`)
+voices/

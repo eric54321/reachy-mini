@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Reachy Mini – Voice + Gesture</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <h1>Reachy Mini – Voice + Gesture</h1>
+
+    <div id="controls">
+        <label for="voice-select">Voice</label>
+        <select id="voice-select"></select>
+
+        <label for="volume-slider">Volume</label>
+        <div style="display:flex; align-items:center; gap:8px;">
+            <input type="range" id="volume-slider" min="0" max="100" value="50">
+            <span id="volume-value">50</span>
+        </div>
+
+        <label for="emotion-select">Insert emotion tag</label>
+        <div style="display:flex; gap:8px;">
+            <select id="emotion-select"></select>
+            <button id="insert-emotion-btn" type="button">Insert</button>
+        </div>
+
+        <label for="message-input">Message (use [tag] for emotion, e.g. <code>[happy] Hi there!</code>)</label>
+        <textarea id="message-input" rows="3" placeholder="[happy] Hi there! How are you?"></textarea>
+
+        <button id="say-btn">Say it</button>
+    </div>
+
+    <div id="status">Loading...</div>
+    <script src="/static/main.js"></script>
+</body>
+
+</html>
