@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from reachy_mini import ReachyMini, ReachyMiniApp
 
 from voice_gesture.emotion_to_gesture import GestureLibrary, list_emotions
-from voice_gesture.speak import DEFAULT_VOICE_ID, list_available_voices, speak
+from voice_gesture.tts import DEFAULT_VOICE_ID, list_available_voices, speak
 from voice_gesture.split_message import split_message
 
 

@@ -10,7 +10,7 @@ import time
 from fastapi.testclient import TestClient
 
 from voice_gesture.main import VoiceGesture
-from voice_gesture.speak import list_available_voices
+from voice_gesture.tts import list_available_voices
 
 
 class FakeMediaManager:

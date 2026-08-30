@@ -1,10 +1,11 @@
-"""Tests for speak(). Requires the en_US-lessac-medium Piper voice to be
-downloaded into voices/ (see speak.py docstring). Run with: pytest test_speak.py
+"""Tests for the Piper provider. Requires the en_US-lessac-medium Piper voice
+to be downloaded into voices/ (see tts/piper_provider.py docstring).
+Run with: pytest test_piper_provider.py
 """
 
 import wave
 
-from voice_gesture.speak import list_available_voices, speak
+from voice_gesture.tts.piper_provider import DEFAULT_VOICE, list_available_voices, speak
 
 
 def test_speak_produces_a_playable_wav_file():
@@ -20,7 +21,7 @@ def test_speak_produces_a_playable_wav_file():
 
 def test_list_available_voices_includes_the_default():
     voices = list_available_voices()
-    assert "en_US-lessac-medium" in voices
+    assert DEFAULT_VOICE in voices
     assert voices == sorted(voices)
 
 

@@ -18,6 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest", "httpx"]  # httpx: needed by FastAPI's TestClient
+kyutai = ["pocket-tts"]  # pocket-tts provider (pulls in torch); optional, Piper works without it
 keywords = ["reachy-mini-app"]
 
 [project.entry-points."reachy_mini_apps"]
