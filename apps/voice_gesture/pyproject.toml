@@ -13,6 +13,7 @@ dependencies = [
     "reachy-mini",
     "piper-tts",
     "requests",
+    "python-dotenv",
 ]
 
 [project.optional-dependencies]

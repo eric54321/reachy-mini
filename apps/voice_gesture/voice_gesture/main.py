@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 
@@ -149,11 +150,31 @@ class VoiceGesture(ReachyMiniApp):
         reachy_mini.goto_sleep()
 
 
+def _connection_kwargs() -> dict:
+    """Physical robot vs. simulator, from .env (see .env.example).
+
+    mDNS ("reachy-mini.local") doesn't resolve on this network, so both
+    branches connect by IP/host + port explicitly rather than relying on
+    ReachyMiniApp.wrapped_run()'s own localhost auto-detect (which only ever
+    checks port 8000 — no good here since port 8000 is blocked on this
+    machine, so a sim daemon has to run on an alternate port anyway).
+    """
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    mode = os.environ.get("REACHY_MINI_MODE", "physical")
+
+    if mode == "sim":
+        return {
+            "host": os.environ.get("REACHY_MINI_SIM_HOST", "localhost"),
+            "port": int(os.environ.get("REACHY_MINI_SIM_PORT", "8090")),
+        }
+    return {"host": os.environ.get("REACHY_MINI_HOST", "192.168.50.216")}
+
+
 if __name__ == "__main__":
     app = VoiceGesture()
     try:
-        # mDNS ("reachy-mini.local") doesn't resolve on this network — connect
-        # by IP instead, same workaround as the scripts/ test scripts.
-        app.wrapped_run(host="192.168.50.216")
+        app.wrapped_run(**_connection_kwargs())
     except KeyboardInterrupt:
         app.stop()

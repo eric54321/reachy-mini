@@ -105,6 +105,23 @@ Three small, separately testable pieces:
   findings (mDNS, stuck motor-driver state + daemon restart fix) — several instances of "commands
   succeed, robot doesn't respond" turned out to be robot/daemon-side, not app bugs.
 
+- **Volume control + emotion picklist added to the UI**, plus a **physical/sim connection
+  toggle**:
+  - `GET/POST /volume` proxies the daemon's own OS-level volume API
+    (`http://<robot-ip>:8000/api/volume/{current,set}` — a robot/daemon endpoint, not part of
+    the `reachy_mini` SDK client). UI has a slider (debounced).
+  - `GET /emotions` lists the 20 usable `[tag]` names from `emotion_to_gesture.py`; UI has a
+    dropdown + "Insert" button that drops `[tag] ` into the message box at the cursor.
+  - Physical vs. simulator is now an `.env` toggle (`REACHY_MINI_MODE=physical|sim` +
+    host/port overrides — see `.env.example` and `_connection_kwargs()` in `main.py`), instead
+    of the hardcoded IP. Defaults to physical, unchanged behavior when `.env` is absent. Note:
+    this machine's port 8000 is blocked (see SETUP.md), so a sim daemon needs an alternate
+    port and both modes connect by explicit host+port rather than relying on the SDK's
+    localhost auto-detect.
+  - 20-test suite passes (added tests for `/emotions`, `/volume` degrading gracefully without
+    a real daemon, and `_connection_kwargs()`'s physical/sim branching).
+- Pushed to GitHub: [eric54321/reachy-mini@bb4ea99](https://github.com/eric54321/reachy-mini/commit/bb4ea99).
+
 ## Next steps
 
 - Consider adding OpenAI/ElevenLabs/Grok as additional `speak()` backends later — the adapter
@@ -112,3 +129,5 @@ Three small, separately testable pieces:
   not a rewrite. The voice picker's `/voices` list would need to merge in non-Piper voice ids too.
 - Revisit the naive `time.sleep(duration)` sentence-pacing in `say()` if it drifts noticeably
   from actual audio playback with longer messages
+- Sim mode is implemented but not yet tried end-to-end (needs `reachy-mini-daemon --sim
+  --headless --fastapi-port <port>` running locally first)
