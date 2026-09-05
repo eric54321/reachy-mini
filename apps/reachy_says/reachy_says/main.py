@@ -27,7 +27,7 @@ REACHY_SPOKEN = "Reechy"
 # Spoken once at the start of a game, before round 1.
 INTRO_TEXT = f"Hello everyone, let's play {REACHY_SPOKEN} Says. Ready, set, go!"
 INTRO_MOVE = "enthusiastic2"
-INTRO_PAUSE_SECONDS = 1.0
+INTRO_PAUSE_SECONDS = 0.5
 
 # Reaction line + gesture for each way a round can resolve (see game.py).
 RESULT_TEXT = {
