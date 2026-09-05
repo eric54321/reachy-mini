@@ -91,8 +91,13 @@ SDK's `connection_mode="auto"` finds it via mDNS (hostname `reachy-mini`).
 reachy-mini-daemon --sim --headless --fastapi-port 8090
 ```
 
-- `--headless` is required — without it, MuJoCo tries to open a GUI/OpenGL window and
-  crashes in a non-interactive shell.
+Or from the repo root: `start_sim.bat` (opens it in its own window, viewer visible — no
+`--headless`). To stop it, Ctrl-C in that window (graceful shutdown); `stop_sim.bat` is a
+force-kill fallback for when you don't have the window handy.
+
+- `--headless` is only needed in a non-interactive shell (no display) — without it there,
+  MuJoCo tries to open a GUI/OpenGL window and crashes. `start_sim.bat` runs interactively,
+  so it leaves the viewer window on.
 - Don't assume port 8000 is free. On this machine it's blocked by Windows' IP Helper
   service (`WinError 10013`, access-denied rather than "in use") and separately has a
   `netsh portproxy` rule forwarding it to WSL2. Check `netstat -ano | findstr :8000`

@@ -1,0 +1,107 @@
+:root {
+    /* Explicit light/dark palette — without this, a page with no declared
+       colors can get auto-inverted by the browser's dark-mode heuristics
+       into low-contrast (near-black-on-black) text, which is almost
+       certainly why the countdown was invisible in practice. */
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1c1c1c;
+    --muted: #7f8c8d;
+    --accent: #2c7be5;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #1c1c1c;
+        --fg: #f0f0f0;
+    }
+}
+
+body {
+    font-family: sans-serif;
+    margin: 24px;
+    text-align: center;
+    background-color: var(--bg);
+    color: var(--fg);
+}
+
+/* Without this, the panels' own `display: flex` below (an author-origin
+   rule) beats the browser default `[hidden] { display: none }` UA rule
+   regardless of selector specificity, since author rules always win over
+   user-agent rules of the same weight — so a hidden panel would still
+   render. */
+[hidden] {
+    display: none !important;
+}
+
+#settings,
+#idle-panel,
+#game-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    margin: 24px 0;
+}
+
+#settings {
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--muted);
+}
+
+#settings select {
+    font-size: 15px;
+    padding: 4px 8px;
+}
+
+button {
+    padding: 10px 20px;
+    border: none;
+    color: white;
+    cursor: pointer;
+    font-size: 16px;
+    border-radius: 6px;
+    background-color: #3498db;
+}
+
+button:disabled {
+    background-color: #bdc3c7;
+    cursor: not-allowed;
+}
+
+#confirm-btn {
+    background-color: #2ecc71;
+    font-size: 22px;
+    padding: 20px 40px;
+}
+
+#confirm-btn:disabled {
+    background-color: #bdc3c7;
+}
+
+#reset-btn {
+    background-color: #e74c3c;
+    margin-top: 16px;
+}
+
+#round-info {
+    font-size: 18px;
+}
+
+#countdown {
+    font-size: 72px;
+    font-weight: bold;
+    color: var(--accent);
+}
+
+#result-banner {
+    margin-top: 16px;
+    font-size: 24px;
+    font-weight: bold;
+}
+
+#status {
+    margin-top: 16px;
+    font-weight: bold;
+    color: #7f8c8d;
+}
