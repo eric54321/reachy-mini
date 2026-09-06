@@ -18,6 +18,12 @@ class FakeMediaManager:
     def play_sound(self, path):
         pass
 
+    def get_frame(self):
+        # No real camera in tests — the trick-round motion watcher treats a
+        # missing frame as "no data" and gracefully finds no motion (see
+        # motion.py), so trick rounds still resolve via /confirm here.
+        return None
+
 
 class FakeReachyMini:
     def __init__(self):
@@ -166,6 +172,20 @@ def test_voices_endpoint_lists_downloaded_voices():
         data = resp.json()
         assert data["voices"] == list_available_voices()
         assert data["current"] in data["voices"]
+    finally:
+        stop_event.set()
+        t.join(timeout=2)
+
+
+def test_bluff_mode_defaults_off_and_can_be_toggled():
+    app, stop_event, t = make_running_app()
+    try:
+        client = TestClient(app.settings_app)
+        assert client.get("/bluff").json() == {"enabled": False}
+
+        resp = client.post("/bluff", json={"enabled": True})
+        assert resp.json() == {"enabled": True}
+        assert client.get("/bluff").json() == {"enabled": True}
     finally:
         stop_event.set()
         t.join(timeout=2)

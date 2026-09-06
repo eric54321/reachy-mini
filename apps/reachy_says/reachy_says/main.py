@@ -1,4 +1,5 @@
 import os
+import random
 import threading
 import time
 import wave
@@ -7,6 +8,7 @@ import requests
 from pydantic import BaseModel, Field
 from reachy_mini import ReachyMini, ReachyMiniApp
 
+from reachy_says import motion
 from reachy_says.commands import Command
 from reachy_says.game import (
     MAX_ROUNDS,
@@ -30,16 +32,52 @@ INTRO_MOVE = "enthusiastic2"
 INTRO_PAUSE_SECONDS = 0.5
 
 # Reaction line + gesture for each way a round can resolve (see game.py).
+# "gotcha" isn't looked up here — see GOTCHA_LINES below for why.
 RESULT_TEXT = {
     "success": "Nice one!",
     "survived_trick": "Whew, good catch!",
-    "gotcha": "Gotcha! You moved!",
 }
 RESULT_MOVE = {
     "success": "success1",
     "survived_trick": "success2",
-    "gotcha": "laughing1",
 }
+
+# How long the camera watches for motion after an un-prefixed ("trick")
+# command, capped by the round's own timer (see the ANNOUNCING branch of
+# run()'s main loop). Within the 1.5-3s range from the design doc.
+TRAP_WINDOW_SECONDS = 2.5
+
+# Rotating pool for a real catch, so callouts don't feel repetitive — picked
+# randomly in the ANNOUNCING/RESULT handling below. Presentation-only (never
+# affects game.py's testable state), so plain random.choice is fine here.
+GOTCHA_LINES: list[tuple[str, str]] = [
+    ("Gotcha! You moved!", "laughing1"),
+    ("Caught you red-handed!", "proud2"),
+    ("Ooh, somebody moved!", "amazed1"),
+    ("Nice try, I saw that!", "cheerful1"),
+]
+
+# A short "suspicious pause" beat played before any gotcha reveal (real or
+# bluffed) so Reachy doesn't announce a catch instantly and flatly. The
+# spoken line + gesture itself already takes real time (TTS + move
+# playback), so the extra dead-air pause on top of that stays at 0 by
+# default — bump it up only if playtesting says the beat needs more room.
+SUSPICION_TEXT = "Hmm... wait a second..."
+SUSPICION_MOVE = "uncertain1"
+SUSPICION_PAUSE_SECONDS = 0.0
+
+# Bluff mode: purely comedic fake-out layered onto a genuinely *survived*
+# trick round — never turns into a real gotcha, so it can't cost a point or
+# end the game (see main.py's README section / the design doc's own caution
+# about not being deceptive about real detection).
+BLUFF_CHANCE = 0.2
+BLUFF_TEASE_LINES = [
+    "Wait... did you just move?",
+    "Hold on, I think I saw something...",
+    "Uh oh, was that a twitch?",
+]
+BLUFF_RELIEF_TEXT = "Just kidding, you're safe!"
+BLUFF_RELIEF_MOVE = "relief1"
 
 
 def _announce_text(command: Command, is_trick: bool) -> str:
@@ -110,12 +148,19 @@ class ReachySays(ReachyMiniApp):
             available_voices[0] if available_voices else DEFAULT_VOICE_ID
         )
 
+        # Bluff mode: off by default — a clearly-opt-in toggle per the design
+        # doc, not something that silently changes the game's fairness.
+        bluff_mode_enabled = False
+
         class ConfigRequest(BaseModel):
             timer_seconds: float = Field(..., ge=MIN_TIMER_SECONDS, le=MAX_TIMER_SECONDS)
             max_rounds: int = Field(..., ge=MIN_ROUNDS, le=MAX_ROUNDS)
 
         class VoiceRequest(BaseModel):
             voice_id: str
+
+        class BluffRequest(BaseModel):
+            enabled: bool
 
         class VolumeRequest(BaseModel):
             volume: int = Field(..., ge=0, le=100)
@@ -169,6 +214,16 @@ class ReachySays(ReachyMiniApp):
                 current_voice_id = req.voice_id
             return {"current": current_voice_id}
 
+        @self.settings_app.get("/bluff")
+        def get_bluff():
+            return {"enabled": bluff_mode_enabled}
+
+        @self.settings_app.post("/bluff")
+        def set_bluff(req: BluffRequest):
+            nonlocal bluff_mode_enabled
+            bluff_mode_enabled = req.enabled
+            return {"enabled": bluff_mode_enabled}
+
         @self.settings_app.get("/volume")
         def get_volume():
             # Speaker volume is a robot/OS-level setting served by the
@@ -214,6 +269,28 @@ class ReachySays(ReachyMiniApp):
             self.stop()
             return {"mode": req.mode, "restarting": True}
 
+        def _round_still_waiting(expected_round: int) -> bool:
+            """Used by a trick round's motion watcher thread to stop early
+            once its round has moved past WAITING (resolved, or reset)."""
+            with state_lock:
+                return game.round_number == expected_round and game.status == Status.WAITING
+
+        def _watch_for_trick_motion(expected_round: int, trap_window_seconds: float) -> None:
+            """Runs in its own daemon thread (see the ANNOUNCING branch
+            below) so it never blocks the 0.05s state-machine poll loop —
+            that's what lets /confirm still interrupt WAITING early. Only
+            ever calls game.report_motion(), which is itself a no-op outside
+            WAITING on a trick round, so a stale/late call here is harmless."""
+            found = motion.watch_for_motion(
+                reachy_mini.media_manager.get_frame,
+                duration_seconds=trap_window_seconds,
+                is_active=lambda: _round_still_waiting(expected_round),
+            )
+            if found:
+                with state_lock:
+                    if game.round_number == expected_round and game.status == Status.WAITING:
+                        game.report_motion()
+
         # Main control loop: advances the game state machine and performs
         # its speak+gesture side effects (see game.py's tick() docstring for
         # the event protocol).
@@ -242,6 +319,12 @@ class ReachySays(ReachyMiniApp):
                             # Guard against a /reset that landed while we
                             # were mid-announce (blocking on TTS/gesture).
                             game.begin_waiting()
+                            if is_trick:
+                                threading.Thread(
+                                    target=_watch_for_trick_motion,
+                                    args=(game.round_number, min(TRAP_WINDOW_SECONDS, game.timer_seconds)),
+                                    daemon=True,
+                                ).start()
                 else:
                     with state_lock:
                         event = game.tick()
@@ -249,10 +332,25 @@ class ReachySays(ReachyMiniApp):
                         score = game.score
 
                     if event == "result":
-                        text = RESULT_TEXT.get(last_result, "")
-                        move = RESULT_MOVE.get(last_result, "attentive1")
-                        if text:
+                        if last_result == "gotcha":
+                            _speak_and_gesture(reachy_mini, gestures, SUSPICION_TEXT, SUSPICION_MOVE, voice_id)
+                            time.sleep(SUSPICION_PAUSE_SECONDS)
+                            text, move = random.choice(GOTCHA_LINES)
                             _speak_and_gesture(reachy_mini, gestures, text, move, voice_id)
+                        elif last_result == "survived_trick" and bluff_mode_enabled and random.random() < BLUFF_CHANCE:
+                            _speak_and_gesture(reachy_mini, gestures, SUSPICION_TEXT, SUSPICION_MOVE, voice_id)
+                            time.sleep(SUSPICION_PAUSE_SECONDS)
+                            _speak_and_gesture(reachy_mini, gestures, random.choice(BLUFF_TEASE_LINES), SUSPICION_MOVE, voice_id)
+                            time.sleep(SUSPICION_PAUSE_SECONDS)
+                            _speak_and_gesture(reachy_mini, gestures, BLUFF_RELIEF_TEXT, BLUFF_RELIEF_MOVE, voice_id)
+                            _speak_and_gesture(
+                                reachy_mini, gestures, RESULT_TEXT[last_result], RESULT_MOVE[last_result], voice_id
+                            )
+                        else:
+                            text = RESULT_TEXT.get(last_result, "")
+                            move = RESULT_MOVE.get(last_result, "attentive1")
+                            if text:
+                                _speak_and_gesture(reachy_mini, gestures, text, move, voice_id)
                     elif event == "game_over":
                         if last_result == "gotcha":
                             text = f"Game over! You made it through {score} round{'s' if score != 1 else ''}."

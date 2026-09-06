@@ -2,6 +2,7 @@ const connectionSelect = document.getElementById("connection-select");
 const voiceSelect = document.getElementById("voice-select");
 const volumeSlider = document.getElementById("volume-slider");
 const volumeValue = document.getElementById("volume-value");
+const bluffToggle = document.getElementById("bluff-toggle");
 const idlePanel = document.getElementById("idle-panel");
 const gamePanel = document.getElementById("game-panel");
 const timerInput = document.getElementById("timer-input");
@@ -126,6 +127,29 @@ function setVolume(volume) {
     }, 300);
 }
 
+async function loadBluffMode() {
+    try {
+        const resp = await fetch("/bluff");
+        if (!resp.ok) {
+            setTimeout(loadBluffMode, 500); // see loadConnection() for why this retries
+            return;
+        }
+        const data = await resp.json();
+        bluffToggle.checked = data.enabled;
+    } catch (e) {
+        setTimeout(loadBluffMode, 500);
+    }
+}
+
+async function setBluffMode(enabled) {
+    try {
+        const data = await postJSON("/bluff", { enabled });
+        status.textContent = `Bluff mode ${data.enabled ? "on" : "off"}.`;
+    } catch (e) {
+        status.textContent = "Backend error setting bluff mode.";
+    }
+}
+
 async function startGame() {
     const timerSeconds = Number(timerInput.value);
     const maxRounds = Number(roundsInput.value);
@@ -211,6 +235,7 @@ async function pollState() {
 connectionSelect.addEventListener("change", (e) => setConnection(e.target.value));
 voiceSelect.addEventListener("change", (e) => setVoice(e.target.value));
 volumeSlider.addEventListener("input", (e) => setVolume(e.target.value));
+bluffToggle.addEventListener("change", (e) => setBluffMode(e.target.checked));
 startBtn.addEventListener("click", startGame);
 confirmBtn.addEventListener("click", confirmAction);
 resetBtn.addEventListener("click", resetGame);
@@ -218,5 +243,6 @@ resetBtn.addEventListener("click", resetGame);
 loadConnection();
 loadVoices();
 loadVolume();
+loadBluffMode();
 pollState();
 setInterval(pollState, 300);

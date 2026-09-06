@@ -107,6 +107,48 @@ def test_non_trick_timeout_still_counts_as_success():
     assert state.score == 1
 
 
+def test_report_motion_only_takes_effect_while_waiting_on_a_trick_round():
+    state, _ = make_state()
+    start_round_one(state)  # round 1 is never a trick, status == ANNOUNCING
+    state.is_trick = True
+    state.report_motion()
+    assert state.motion_flagged is False  # not WAITING yet
+
+    state.begin_waiting()
+    state.is_trick = False
+    state.report_motion()
+    assert state.motion_flagged is False  # WAITING, but not a trick round
+
+    state.is_trick = True
+    state.report_motion()
+    assert state.motion_flagged is True
+
+
+def test_trick_motion_flagged_is_gotcha_without_confirm():
+    state, clock = make_state()
+    start_round_one(state)
+    state.is_trick = True
+    state.begin_waiting()
+    state.report_motion()
+    assert state.confirmed is False  # never pressed the button
+    assert state.tick() == "result"
+    assert state.last_result == "gotcha"
+    assert state.score == 0
+
+
+def test_motion_flagged_resets_between_rounds():
+    state, clock = make_state()
+    start_round_one(state)
+    state.is_trick = True
+    state.begin_waiting()
+    state.report_motion()
+    clock.advance(10)
+    state.tick()  # -> RESULT (gotcha)
+    state.reset()
+    start_round_one(state)
+    assert state.motion_flagged is False
+
+
 def test_trick_confirmed_is_gotcha_and_ends_the_game():
     state, clock = make_state()
     start_round_one(state)

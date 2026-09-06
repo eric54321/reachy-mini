@@ -12,6 +12,11 @@ speaks the command + plays its gesture) -> begin_waiting() -> WAITING
 (main.py plays a success/gotcha reaction, paused for RESULT_PAUSE_SECONDS)
 -> tick() either starts the next round (ANNOUNCING) or ends the game
 (GAME_OVER).
+
+On a trick round, WAITING can be caught two ways: confirm() (the "I did
+it!" button, i.e. self-report) or report_motion() (main.py's camera watcher
+thread flags movement during the trap window). Either sets the round up to
+resolve as "gotcha" — see _resolve_round().
 """
 
 from __future__ import annotations
@@ -53,6 +58,7 @@ class GameState:
     current_command: Command | None = None
     is_trick: bool = False
     confirmed: bool = False
+    motion_flagged: bool = False
     round_deadline: float | None = None
     result_deadline: float | None = None
     last_result: str | None = None  # "success" | "survived_trick" | "gotcha" | None
@@ -96,6 +102,7 @@ class GameState:
         self.current_command = None
         self.is_trick = False
         self.confirmed = False
+        self.motion_flagged = False
         self.round_deadline = None
         self.result_deadline = None
         self.last_result = None
@@ -105,6 +112,14 @@ class GameState:
         """Kid pressed "I did it!" — only takes effect while WAITING."""
         if self.status == Status.WAITING:
             self.confirmed = True
+
+    def report_motion(self) -> None:
+        """Camera watcher detected motion during a trick round's trap
+        window — only takes effect while WAITING on a trick round (mirrors
+        confirm()). Either this or confirm() can trigger a gotcha; the game
+        doesn't care which one fired first."""
+        if self.status == Status.WAITING and self.is_trick:
+            self.motion_flagged = True
 
     def time_remaining(self) -> float:
         if self.status != Status.WAITING or self.round_deadline is None:
@@ -125,7 +140,7 @@ class GameState:
         "game_over" (play the closing reaction). None if nothing changed.
         """
         if self.status == Status.WAITING:
-            if self.confirmed or self.time_remaining() <= 0:
+            if self.confirmed or self.motion_flagged or self.time_remaining() <= 0:
                 self._resolve_round()
                 return "result"
         elif self.status == Status.RESULT:
@@ -161,11 +176,12 @@ class GameState:
             and self._rng.random() < TRICK_CHANCE
         )
         self.confirmed = False
+        self.motion_flagged = False
         self.status = Status.ANNOUNCING
 
     def _resolve_round(self) -> None:
         self.last_trick_round = self.is_trick
-        if self.is_trick and self.confirmed:
+        if self.is_trick and (self.confirmed or self.motion_flagged):
             self.last_result = "gotcha"
         elif self.is_trick:
             self.last_result = "survived_trick"

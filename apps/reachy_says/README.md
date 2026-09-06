@@ -19,9 +19,14 @@ it's the requirements doc this app was built from) for the full feature list and
 Reachy leads a Simon-Says game: it calls out a physical action ("Reachy says, touch your nose!"),
 performs its own gesture as a visual cue, and gives you a few seconds to do it — confirmed with an
 "I did it!" button in the browser UI, with a live countdown on screen. Every so often Reachy skips
-the "Reachy says" prefix; pressing the button anyway is a "gotcha" that ends the game. Survive all
-the rounds and you win. No camera-based move verification in V1 — it's self-reported, on the honor
-system.
+the "Reachy says" prefix; pressing the button anyway (or moving in front of the camera during the
+short "trap window" right after the command) is a "gotcha" that ends the game — Reachy plays a
+suspicious pause before revealing the catch, then a random line from a rotating pool. Survive all
+the rounds and you win.
+
+An optional **bluff mode** (off by default, toggle in the settings panel) has Reachy occasionally
+fake a suspicious pause on a trick round you actually survived, then admit "just kidding" — purely
+for laughs, it never costs a point or ends the game.
 
 ## One-time setup
 
@@ -91,16 +96,18 @@ Open the game page in a browser:
 - `http://localhost:8043` on the machine running the app
 - `http://<that machine's LAN IP>:8043` from another device on the same WiFi (e.g. a phone)
 
-1. Pick the **connection** (physical robot / simulator), a **voice**, and set the **volume** —
-   these apply immediately, any time. Switching connection takes a few seconds to reconnect;
-   the page recovers on its own once it's back.
+1. Pick the **connection** (physical robot / simulator), a **voice**, set the **volume**, and
+   optionally turn on **bluff mode** — these apply immediately, any time. Switching connection
+   takes a few seconds to reconnect; the page recovers on its own once it's back.
 2. Set the **round timer** (2–15 seconds) and **number of rounds** (1–20), then click
    **Start Game**. Reachy opens with a short greeting ("Hello everyone, let's play Reachy
    Says. Ready, set, go!") and a one-second pause before round 1 starts.
 3. Listen and watch — Reachy speaks the command and plays a matching gesture.
 4. Click **I did it!** once you've done the action, before the countdown runs out.
-5. If Reachy skips saying "Reachy says" and you click the button anyway, that's a gotcha — game
-   over. Otherwise it keeps going until you've survived every round.
+5. If Reachy skips saying "Reachy says," don't move — the camera watches for a couple of seconds
+   after the command, and clicking the button or moving either one is a gotcha (after a
+   suspicious pause and a randomly-picked callout) that ends the game. Otherwise it keeps going
+   until you've survived every round.
 6. **Reset** stops the game and returns to the start screen at any time.
 
 ## Code layout
@@ -111,12 +118,24 @@ Open the game page in a browser:
   emotion tag).
 - `game.py` — the round/timer/trick/score state machine. Pure logic, no I/O — see its own
   docstring for the event protocol `main.py` drives it with. This is what `test_game.py` exercises
-  directly, with an injectable clock/rng, no real sleeping or hardware needed.
+  directly, with an injectable clock/rng, no real sleeping or hardware needed. A trick round can be
+  caught two ways: `confirm()` (the "I did it!" button) or `report_motion()` (the camera watcher in
+  `main.py` — see below); either one resolves the round as a "gotcha."
+- `motion.py` — camera-based motion detection for the trick-round "trap window": aggregate
+  frame-differencing on downsampled grayscale frames (plain numpy — no `cv2` dependency), no
+  per-person tracking. `watch_for_motion()` polls `reachy_mini.media_manager.get_frame()` for a
+  short window and reports whether anything moved; `test_motion.py` exercises it with synthetic
+  frames and a no-op sleep, no camera needed.
 - `main.py` — the `ReachyMiniApp` itself: FastAPI routes (`/state`, `/start`, `/confirm`,
-  `/reset`, `/config`, `/voices`, `/voice`, `/volume`, `/connection`) and the loop that turns
-  `game.py`'s state transitions into actual TTS + gesture calls. `/connection` (physical/sim
-  toggle) works by calling `stop()` and having `__main__`'s loop reconnect with a fresh
-  `ReachySays` instance — see the docstrings on `_make_app()` and the `__main__` block.
+  `/reset`, `/config`, `/voices`, `/voice`, `/bluff`, `/volume`, `/connection`) and the loop that
+  turns `game.py`'s state transitions into actual TTS + gesture calls. On a trick round it also
+  spawns a daemon thread running `motion.watch_for_motion()` for the trap window, reporting a catch
+  back via `game.report_motion()`. A real gotcha gets a suspicious pause before a randomly-picked
+  line from `GOTCHA_LINES`; bluff mode (see `BLUFF_CHANCE`) can trigger that same suspicious pause
+  on a round that was actually survived, purely for comedic effect — it never changes the outcome.
+  `/connection` (physical/sim toggle) works by calling `stop()` and having `__main__`'s loop
+  reconnect with a fresh `ReachySays` instance — see the docstrings on `_make_app()` and the
+  `__main__` block.
 - `tts/` — forked wholesale from `voice_gesture/tts/` (Piper only).
 
 ## Tests
@@ -125,6 +144,10 @@ Open the game page in a browser:
 pytest reachy_says/
 ```
 
-`test_game.py` and `test_commands.py` need no hardware. `test_endpoints.py` runs the app's real
-FastAPI routes against a fake robot (real TTS still runs, since it needs no hardware either).
-`test_connection_kwargs.py` covers the physical/sim `.env` toggle.
+`test_game.py`, `test_commands.py`, and `test_motion.py` need no hardware. `test_endpoints.py` runs
+the app's real FastAPI routes against a fake robot (real TTS still runs, since it needs no
+hardware either). `test_connection_kwargs.py` covers the physical/sim `.env` toggle.
+
+The motion-detection sensitivity defaults (`motion.py`'s `DEFAULT_PIXEL_THRESHOLD` /
+`DEFAULT_RATIO_THRESHOLD`) are a starting point, not a validated calibration — they can only really
+be tuned by testing against the physical robot's camera with a person in frame.
