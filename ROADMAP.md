@@ -28,25 +28,25 @@ Status legend: ✅ done · 🔜 next · ⬜ later · ❓ needs a decision or ver
 
 ---
 
-## Phase 1 — Harden the PoC 🔜
+## Phase 1 — Harden the PoC ✅
 
 Small, low-risk steps so the foundation is trustworthy before adding hearing.
 
-- [ ] Set speaker volume at startup (`REACHY_VOLUME`, default 20) instead of by hand
-- [ ] Measure baseline latency (time to first tool call and to finished reply) with Haiku, and
+- [x] Set speaker volume at startup (`REACHY_VOLUME`, default 20) instead of by hand
+- [x] Measure baseline latency (time to first tool call and to finished reply) with Haiku, and
       keep a small timing log so later phases can be compared against it
-- [ ] Clean error handling: robot unreachable, key missing, tool failure → one clear message
-- [ ] Reuse `voice_gesture`'s emotion/gesture library as a `play_emotion` tool, so the agent has
+- [x] Clean error handling: robot unreachable, key missing, tool failure → one clear message
+- [x] Reuse `voice_gesture`'s emotion/gesture library as a `play_emotion` tool, so the agent has
       richer moves than nod/wiggle
-- [ ] Interactive mode: a REPL (`python scripts/strands_reachy.py` with no prompt) that keeps
+- [x] Interactive mode: a REPL (`python scripts/strands_reachy.py` with no prompt) that keeps
       conversation memory between turns
-- [ ] Add `.env` loading so `REACHY_MINI_HOST`, `LLM_PROVIDER`, etc. work without system vars
+- [x] Add `.env` loading so `REACHY_MINI_HOST`, `LLM_PROVIDER`, etc. work without system vars
 
 **Done when:** 10 varied typed requests work in a row with Claude, and baseline latency is recorded.
 
 ---
 
-## Phase 2 — Hear ⬜
+## Phase 2 — Hear 🔜
 
 Get clean speech from the robot's microphone into text.
 
