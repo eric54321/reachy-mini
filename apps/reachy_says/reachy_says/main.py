@@ -1,14 +1,18 @@
 import os
 import random
+import tempfile
 import threading
 import time
 import wave
+from pathlib import Path
 
 import requests
+from fastapi import Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from reachy_mini import ReachyMini, ReachyMiniApp
 
-from reachy_says import motion
+from reachy_says import motion, replay
 from reachy_says.commands import Command
 from reachy_says.game import (
     MAX_ROUNDS,
@@ -78,6 +82,14 @@ BLUFF_TEASE_LINES = [
 ]
 BLUFF_RELIEF_TEXT = "Just kidding, you're safe!"
 BLUFF_RELIEF_MOVE = "relief1"
+
+# Replay clip (config-gated `enable_replay_clip` feature): only ever built
+# for a camera-confirmed gotcha (there's a real motion location to zoom
+# into) or a bluff tease (center-crop fallback) — never for a plain
+# self-reported (button-only) gotcha, which has nothing to show. One fixed
+# path, overwritten each time — clips are discarded after showing, not kept
+# for a highlight reel (see the design doc's open question on retention).
+REPLAY_CLIP_PATH = Path(tempfile.gettempdir()) / "reachy_says_replay.gif"
 
 
 def _announce_text(command: Command, is_trick: bool) -> str:
@@ -152,6 +164,25 @@ class ReachySays(ReachyMiniApp):
         # doc, not something that silently changes the game's fairness.
         bluff_mode_enabled = False
 
+        # Replay clip: on by default (the user asked for this feature
+        # directly) — toggle off in the UI to fall back to the plain
+        # voice/gesture-only gotcha with no other change in behavior.
+        enable_replay_clip = True
+        replay_clip_ready = False
+        # True only while the trick-round motion watcher (see
+        # _watch_for_trick_motion below) is the sole camera reader for its
+        # trap window — the continuous replay capture loop stands down
+        # during that window rather than also polling get_frame(), since
+        # two threads pulling the camera at once is asking for trouble.
+        trap_window_active = False
+        # Set (under state_lock) by _watch_for_trick_motion's
+        # on_motion_detected callback when a trick round is genuinely
+        # camera-caught — the anchor + region the replay clip zooms into.
+        # None for a button-only self-report gotcha (nothing to replay).
+        pending_replay_bbox: tuple[int, int, int, int] | None = None
+        pending_replay_anchor: float | None = None
+        replay_buffer = replay.FrameRingBuffer()
+
         class ConfigRequest(BaseModel):
             timer_seconds: float = Field(..., ge=MIN_TIMER_SECONDS, le=MAX_TIMER_SECONDS)
             max_rounds: int = Field(..., ge=MIN_ROUNDS, le=MAX_ROUNDS)
@@ -160,6 +191,9 @@ class ReachySays(ReachyMiniApp):
             voice_id: str
 
         class BluffRequest(BaseModel):
+            enabled: bool
+
+        class ReplayRequest(BaseModel):
             enabled: bool
 
         class VolumeRequest(BaseModel):
@@ -171,7 +205,9 @@ class ReachySays(ReachyMiniApp):
         @self.settings_app.get("/state")
         def get_state():
             with state_lock:
-                return game.to_public_dict()
+                state = game.to_public_dict()
+                state["replay_available"] = enable_replay_clip and replay_clip_ready
+                return state
 
         @self.settings_app.post("/start")
         def start_game():
@@ -183,8 +219,11 @@ class ReachySays(ReachyMiniApp):
 
         @self.settings_app.post("/reset")
         def reset_game():
+            nonlocal replay_clip_ready
             with state_lock:
                 game.reset()
+                replay_clip_ready = False
+                replay_buffer.clear()
                 return game.to_public_dict()
 
         @self.settings_app.post("/confirm")
@@ -223,6 +262,24 @@ class ReachySays(ReachyMiniApp):
             nonlocal bluff_mode_enabled
             bluff_mode_enabled = req.enabled
             return {"enabled": bluff_mode_enabled}
+
+        @self.settings_app.get("/replay")
+        def get_replay():
+            return {"enabled": enable_replay_clip}
+
+        @self.settings_app.post("/replay")
+        def set_replay(req: ReplayRequest):
+            nonlocal enable_replay_clip
+            enable_replay_clip = req.enabled
+            return {"enabled": enable_replay_clip}
+
+        @self.settings_app.get("/replay/clip.gif")
+        def get_replay_clip():
+            with state_lock:
+                ready = enable_replay_clip and replay_clip_ready
+            if not ready or not REPLAY_CLIP_PATH.exists():
+                return Response(status_code=404)
+            return FileResponse(REPLAY_CLIP_PATH, media_type="image/gif")
 
         @self.settings_app.get("/volume")
         def get_volume():
@@ -280,16 +337,85 @@ class ReachySays(ReachyMiniApp):
             below) so it never blocks the 0.05s state-machine poll loop —
             that's what lets /confirm still interrupt WAITING early. Only
             ever calls game.report_motion(), which is itself a no-op outside
-            WAITING on a trick round, so a stale/late call here is harmless."""
-            found = motion.watch_for_motion(
-                reachy_mini.media_manager.get_frame,
-                duration_seconds=trap_window_seconds,
-                is_active=lambda: _round_still_waiting(expected_round),
-            )
+            WAITING on a trick round, so a stale/late call here is harmless.
+
+            While this runs it's also the sole camera reader for the trap
+            window (see trap_window_active below) — if replay clips are
+            enabled, every frame it reads is forwarded into the shared ring
+            buffer via on_frame, and the exact region a detected motion
+            spike happened in is captured via on_motion_detected, so the
+            replay's zoom has somewhere real to point."""
+            nonlocal trap_window_active
+
+            def on_frame(t: float, frame) -> None:
+                if enable_replay_clip:
+                    replay_buffer.append(t, frame)
+
+            def on_motion_detected(bbox) -> None:
+                nonlocal pending_replay_bbox, pending_replay_anchor
+                pending_replay_bbox = bbox
+                pending_replay_anchor = time.monotonic()
+
+            with state_lock:
+                trap_window_active = True
+            try:
+                found = motion.watch_for_motion(
+                    reachy_mini.media_manager.get_frame,
+                    duration_seconds=trap_window_seconds,
+                    is_active=lambda: _round_still_waiting(expected_round),
+                    on_frame=on_frame,
+                    on_motion_detected=on_motion_detected,
+                )
+            finally:
+                with state_lock:
+                    trap_window_active = False
+
             if found:
                 with state_lock:
                     if game.round_number == expected_round and game.status == Status.WAITING:
                         game.report_motion()
+
+        def _try_build_replay_clip(bbox: tuple[int, int, int, int] | None, anchor_time: float | None) -> None:
+            """Best-effort: build the replay clip for a camera-confirmed
+            gotcha (bbox not None, from _watch_for_trick_motion) or a bluff
+            joke-replay (bbox None, center-crop fallback, anchor_time None
+            since there's no real motion event to anchor to). Any failure
+            here (empty buffer, bad frame data, a Pillow hiccup) just skips
+            the replay — it's called after the voice/gesture callout is
+            already decided, so nothing else about the round is affected."""
+            nonlocal replay_clip_ready
+            try:
+                anchor = anchor_time if anchor_time is not None else time.monotonic()
+                frames = replay_buffer.snapshot(
+                    anchor - replay.REPLAY_PRE_ROLL_SECONDS, anchor + replay.REPLAY_POST_ROLL_SECONDS
+                )
+                if not frames:
+                    return
+                caption = random.choice(replay.REPLAY_CAPTIONS)
+                replay.build_clip(frames, bbox, caption, REPLAY_CLIP_PATH)
+                with state_lock:
+                    replay_clip_ready = True
+            except Exception:
+                self.logger.exception("Replay clip build failed")
+
+        def _replay_capture_loop() -> None:
+            """Dashcam-style continuous frame capture for the replay ring
+            buffer — runs for the app's whole lifetime, but only actually
+            pulls a frame when a game is in progress, replay clips are
+            enabled, and no trick round's trap-window watcher is already the
+            camera's sole reader (see trap_window_active above)."""
+            interval = 1.0 / replay.REPLAY_POLL_HZ
+            while not stop_event.is_set():
+                with state_lock:
+                    should_capture = (
+                        enable_replay_clip and game.status != Status.IDLE and not trap_window_active
+                    )
+                if should_capture:
+                    frame = reachy_mini.media_manager.get_frame()
+                    replay_buffer.append(time.monotonic(), frame)
+                time.sleep(interval)
+
+        threading.Thread(target=_replay_capture_loop, daemon=True).start()
 
         # Main control loop: advances the game state machine and performs
         # its speak+gesture side effects (see game.py's tick() docstring for
@@ -319,6 +445,11 @@ class ReachySays(ReachyMiniApp):
                             # Guard against a /reset that landed while we
                             # were mid-announce (blocking on TTS/gesture).
                             game.begin_waiting()
+                            # A new round is starting — any replay clip
+                            # from a previous gotcha is stale now.
+                            replay_clip_ready = False
+                            pending_replay_bbox = None
+                            pending_replay_anchor = None
                             if is_trick:
                                 threading.Thread(
                                     target=_watch_for_trick_motion,
@@ -330,14 +461,27 @@ class ReachySays(ReachyMiniApp):
                         event = game.tick()
                         last_result = game.last_result
                         score = game.score
+                        replay_enabled = enable_replay_clip
+                        motion_bbox = pending_replay_bbox
+                        motion_anchor = pending_replay_anchor
 
                     if event == "result":
                         if last_result == "gotcha":
+                            # Only a camera-confirmed catch (a real bbox)
+                            # has anything to replay — a button-only
+                            # self-report has no motion to zoom into.
+                            if replay_enabled and motion_bbox is not None:
+                                _try_build_replay_clip(motion_bbox, motion_anchor)
                             _speak_and_gesture(reachy_mini, gestures, SUSPICION_TEXT, SUSPICION_MOVE, voice_id)
                             time.sleep(SUSPICION_PAUSE_SECONDS)
                             text, move = random.choice(GOTCHA_LINES)
                             _speak_and_gesture(reachy_mini, gestures, text, move, voice_id)
                         elif last_result == "survived_trick" and bluff_mode_enabled and random.random() < BLUFF_CHANCE:
+                            if replay_enabled:
+                                # No real motion event for a bluff tease —
+                                # center-crop fallback (bbox=None), anchored
+                                # to now.
+                                _try_build_replay_clip(None, None)
                             _speak_and_gesture(reachy_mini, gestures, SUSPICION_TEXT, SUSPICION_MOVE, voice_id)
                             time.sleep(SUSPICION_PAUSE_SECONDS)
                             _speak_and_gesture(reachy_mini, gestures, random.choice(BLUFF_TEASE_LINES), SUSPICION_MOVE, voice_id)

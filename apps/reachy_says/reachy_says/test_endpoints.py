@@ -191,6 +191,33 @@ def test_bluff_mode_defaults_off_and_can_be_toggled():
         t.join(timeout=2)
 
 
+def test_replay_clip_defaults_on_and_can_be_toggled():
+    app, stop_event, t = make_running_app()
+    try:
+        client = TestClient(app.settings_app)
+        assert client.get("/replay").json() == {"enabled": True}
+
+        resp = client.post("/replay", json={"enabled": False})
+        assert resp.json() == {"enabled": False}
+        assert client.get("/replay").json() == {"enabled": False}
+    finally:
+        stop_event.set()
+        t.join(timeout=2)
+
+
+def test_replay_clip_is_not_available_before_any_gotcha():
+    app, stop_event, t = make_running_app()
+    try:
+        client = TestClient(app.settings_app)
+        assert client.get("/state").json()["replay_available"] is False
+
+        resp = client.get("/replay/clip.gif")
+        assert resp.status_code == 404
+    finally:
+        stop_event.set()
+        t.join(timeout=2)
+
+
 def test_set_voice_updates_current_and_rejects_unknown():
     from reachy_says.tts import list_available_voices
 

@@ -31,6 +31,12 @@
             <input type="checkbox" id="bluff-toggle">
             Bluff mode (Reachy occasionally fakes a catch, just for laughs)
         </label>
+
+        <label for="replay-toggle">
+            <input type="checkbox" id="replay-toggle">
+            Replay clip on a catch (zoomed-in, captioned GIF)
+        </label>
+        <div class="hint">Keeps a few seconds of video in memory to replay a catch — nothing is saved to disk.</div>
     </div>
 
     <div id="idle-panel">
@@ -53,6 +59,7 @@
     </div>
 
     <div id="result-banner" hidden></div>
+    <img id="replay-clip" hidden alt="Replay of the catch">
 
     <button id="reset-btn">Reset</button>
 

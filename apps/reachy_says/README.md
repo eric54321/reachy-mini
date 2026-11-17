@@ -28,6 +28,12 @@ An optional **bluff mode** (off by default, toggle in the settings panel) has Re
 fake a suspicious pause on a trick round you actually survived, then admit "just kidding" — purely
 for laughs, it never costs a point or ends the game.
 
+An optional **replay clip** (on by default, toggle in the settings panel) shows a short zoomed-in,
+captioned GIF of a camera-caught gotcha right in the browser — like a game-show blooper reel. It
+keeps a few seconds of rolling video in memory while a game is active (nothing saved to disk) so it
+can build the clip from just before the catch; turning it off falls back to the plain
+voice/gesture-only callout with no other change in behavior.
+
 ## One-time setup
 
 From this folder (`apps/reachy_says/`), in the `reachy` conda env (see [../../SETUP.md](../../SETUP.md)):
@@ -97,8 +103,8 @@ Open the game page in a browser:
 - `http://<that machine's LAN IP>:8043` from another device on the same WiFi (e.g. a phone)
 
 1. Pick the **connection** (physical robot / simulator), a **voice**, set the **volume**, and
-   optionally turn on **bluff mode** — these apply immediately, any time. Switching connection
-   takes a few seconds to reconnect; the page recovers on its own once it's back.
+   toggle **bluff mode** / **replay clip** — these apply immediately, any time. Switching
+   connection takes a few seconds to reconnect; the page recovers on its own once it's back.
 2. Set the **round timer** (2–15 seconds) and **number of rounds** (1–20), then click
    **Start Game**. Reachy opens with a short greeting ("Hello everyone, let's play Reachy
    Says. Ready, set, go!") and a one-second pause before round 1 starts.
@@ -124,14 +130,25 @@ Open the game page in a browser:
 - `motion.py` — camera-based motion detection for the trick-round "trap window": aggregate
   frame-differencing on downsampled grayscale frames (plain numpy — no `cv2` dependency), no
   per-person tracking. `watch_for_motion()` polls `reachy_mini.media_manager.get_frame()` for a
-  short window and reports whether anything moved; `test_motion.py` exercises it with synthetic
-  frames and a no-op sleep, no camera needed.
+  short window and reports whether anything moved; its optional `on_frame`/`on_motion_detected`
+  callbacks are what feed the replay ring buffer and locate the catch for the zoom (see below).
+  `test_motion.py` exercises it with synthetic frames and a no-op sleep, no camera needed.
+- `replay.py` — the config-gated replay-clip feature: `FrameRingBuffer` is a thread-safe rolling
+  buffer of recent camera frames (dashcam-style, discarded after use — nothing is persisted to
+  disk); `build_clip()` turns a snapshot of it into a captioned, zoomed-in, slow-motion animated
+  GIF (Pillow — no video-encoder dependency). Both are hardware-free and unit-tested with synthetic
+  frames in `test_replay.py`.
 - `main.py` — the `ReachyMiniApp` itself: FastAPI routes (`/state`, `/start`, `/confirm`,
-  `/reset`, `/config`, `/voices`, `/voice`, `/bluff`, `/volume`, `/connection`) and the loop that
-  turns `game.py`'s state transitions into actual TTS + gesture calls. On a trick round it also
-  spawns a daemon thread running `motion.watch_for_motion()` for the trap window, reporting a catch
-  back via `game.report_motion()`. A real gotcha gets a suspicious pause before a randomly-picked
-  line from `GOTCHA_LINES`; bluff mode (see `BLUFF_CHANCE`) can trigger that same suspicious pause
+  `/reset`, `/config`, `/voices`, `/voice`, `/bluff`, `/replay`, `/replay/clip.gif`, `/volume`,
+  `/connection`) and the loop that turns `game.py`'s state transitions into actual TTS + gesture
+  calls. On a trick round it also spawns a daemon thread running `motion.watch_for_motion()` for the
+  trap window, reporting a catch back via `game.report_motion()` — while replay clips are enabled,
+  this same thread is also the sole camera reader for that window (forwarding frames into the
+  replay ring buffer itself), since a separate continuous capture thread (`_replay_capture_loop`)
+  stands down for the duration rather than have two threads pull the camera at once. A real gotcha
+  gets a suspicious pause before a randomly-picked line from `GOTCHA_LINES`, plus (if there's a real
+  camera-detected catch to zoom into) a replay clip built via `replay.build_clip()`; bluff mode (see
+  `BLUFF_CHANCE`) can trigger that same suspicious pause — and, with a center-crop "joke replay" —
   on a round that was actually survived, purely for comedic effect — it never changes the outcome.
   `/connection` (physical/sim toggle) works by calling `stop()` and having `__main__`'s loop
   reconnect with a fresh `ReachySays` instance — see the docstrings on `_make_app()` and the
@@ -144,10 +161,14 @@ Open the game page in a browser:
 pytest reachy_says/
 ```
 
-`test_game.py`, `test_commands.py`, and `test_motion.py` need no hardware. `test_endpoints.py` runs
-the app's real FastAPI routes against a fake robot (real TTS still runs, since it needs no
-hardware either). `test_connection_kwargs.py` covers the physical/sim `.env` toggle.
+`test_game.py`, `test_commands.py`, `test_motion.py`, and `test_replay.py` need no hardware.
+`test_endpoints.py` runs the app's real FastAPI routes against a fake robot (real TTS still runs,
+since it needs no hardware either). `test_connection_kwargs.py` covers the physical/sim `.env`
+toggle.
 
 The motion-detection sensitivity defaults (`motion.py`'s `DEFAULT_PIXEL_THRESHOLD` /
 `DEFAULT_RATIO_THRESHOLD`) are a starting point, not a validated calibration — they can only really
-be tuned by testing against the physical robot's camera with a person in frame.
+be tuned by testing against the physical robot's camera with a person in frame. Same goes for the
+replay clip's timing constants (`replay.py`'s `REPLAY_PRE_ROLL_SECONDS`/`REPLAY_POST_ROLL_SECONDS`)
+and, especially, whether reading the camera continuously throughout a game (rather than only during
+the ~2.5s trick-round trap window) causes any lag or contention on the physical robot.

@@ -6,11 +6,25 @@ reason (see motion.py's docstring)."""
 import numpy as np
 import pytest
 
-from reachy_says.motion import _downsample_gray, motion_ratio, watch_for_motion
+from reachy_says.motion import (
+    _downsample_gray,
+    motion_bounding_box,
+    motion_ratio,
+    watch_for_motion,
+)
 
 
 def make_frame(value: int, shape=(32, 32, 3)) -> np.ndarray:
     return np.full(shape, value, dtype=np.uint8)
+
+
+def make_patch_frame(base: int, patch: int, box, shape=(32, 32, 3)) -> np.ndarray:
+    """A uniform frame with a rectangular sub-region set to a different
+    value — used to test localized (not full-frame) motion."""
+    frame = make_frame(base, shape)
+    x0, y0, x1, y1 = box
+    frame[y0:y1, x0:x1, :] = patch
+    return frame
 
 
 def test_motion_ratio_is_zero_for_identical_frames():
@@ -28,6 +42,26 @@ def test_motion_ratio_ignores_small_deltas_under_threshold():
     before = _downsample_gray(make_frame(100))
     after = _downsample_gray(make_frame(105))  # small ambient flicker
     assert motion_ratio(before, after, pixel_threshold=25) == 0.0
+
+
+def test_motion_bounding_box_is_none_for_identical_frames():
+    gray = _downsample_gray(make_frame(100))
+    assert motion_bounding_box(gray, gray) is None
+
+
+def test_motion_bounding_box_is_the_whole_frame_for_a_global_change():
+    before = _downsample_gray(make_frame(0))
+    after = _downsample_gray(make_frame(255))
+    height, width = before.shape
+    assert motion_bounding_box(before, after) == (0, 0, width, height)
+
+
+def test_motion_bounding_box_localizes_a_patch_of_change():
+    # No downsampling here (stride=1) so the box lines up exactly with the
+    # patch coordinates we drew.
+    before = make_frame(100).mean(axis=2)
+    after = make_patch_frame(100, 200, box=(4, 6, 10, 12)).mean(axis=2)
+    assert motion_bounding_box(before, after) == (4, 6, 10, 12)
 
 
 class FakeSleep:
@@ -101,3 +135,39 @@ def test_watch_for_motion_tolerates_missing_frames():
 
     assert result is False
     assert sleep_fn.calls == 4
+
+
+def test_watch_for_motion_calls_on_frame_for_every_frame_read():
+    frames = [make_frame(100)] * 3
+    it = iter(frames)
+    seen = []
+
+    watch_for_motion(
+        lambda: next(it, None),
+        duration_seconds=3.0,
+        poll_hz=8,
+        sleep_fn=FakeSleep(),
+        on_frame=lambda t, f: seen.append(f),
+    )
+
+    assert len(seen) == 3
+
+
+def test_watch_for_motion_reports_bbox_on_detection():
+    # Patch covers a quarter of the 32x32 frame, comfortably past the
+    # default 3% ratio_threshold.
+    frames = [make_frame(100), make_patch_frame(100, 200, box=(4, 4, 20, 20))]
+    it = iter(frames)
+    detected_bbox = []
+
+    result = watch_for_motion(
+        lambda: next(it, None),
+        duration_seconds=3.0,
+        poll_hz=8,
+        stride=1,
+        sleep_fn=FakeSleep(),
+        on_motion_detected=detected_bbox.append,
+    )
+
+    assert result is True
+    assert detected_bbox == [(4, 4, 20, 20)]

@@ -3,6 +3,8 @@ const voiceSelect = document.getElementById("voice-select");
 const volumeSlider = document.getElementById("volume-slider");
 const volumeValue = document.getElementById("volume-value");
 const bluffToggle = document.getElementById("bluff-toggle");
+const replayToggle = document.getElementById("replay-toggle");
+const replayClip = document.getElementById("replay-clip");
 const idlePanel = document.getElementById("idle-panel");
 const gamePanel = document.getElementById("game-panel");
 const timerInput = document.getElementById("timer-input");
@@ -150,6 +152,29 @@ async function setBluffMode(enabled) {
     }
 }
 
+async function loadReplayMode() {
+    try {
+        const resp = await fetch("/replay");
+        if (!resp.ok) {
+            setTimeout(loadReplayMode, 500); // see loadConnection() for why this retries
+            return;
+        }
+        const data = await resp.json();
+        replayToggle.checked = data.enabled;
+    } catch (e) {
+        setTimeout(loadReplayMode, 500);
+    }
+}
+
+async function setReplayMode(enabled) {
+    try {
+        const data = await postJSON("/replay", { enabled });
+        status.textContent = `Replay clip ${data.enabled ? "on" : "off"}.`;
+    } catch (e) {
+        status.textContent = "Backend error setting replay clip.";
+    }
+}
+
 async function startGame() {
     const timerSeconds = Number(timerInput.value);
     const maxRounds = Number(roundsInput.value);
@@ -170,6 +195,7 @@ async function confirmAction() {
 async function resetGame() {
     await postJSON("/reset");
     resultBanner.hidden = true;
+    replayClip.hidden = true;
     status.textContent = "Reset.";
 }
 
@@ -199,6 +225,15 @@ function renderResultBanner(state) {
             : `Game over — caught after ${state.score} round(s).`;
     } else {
         resultBanner.hidden = true;
+    }
+
+    if (state.status === "result" && state.last_result === "gotcha" && state.replay_available) {
+        // Cache-bust with round_number — the file path is fixed and gets
+        // overwritten each gotcha (see main.py's REPLAY_CLIP_PATH).
+        replayClip.src = `/replay/clip.gif?round=${state.round_number}`;
+        replayClip.hidden = false;
+    } else {
+        replayClip.hidden = true;
     }
 }
 
@@ -236,6 +271,7 @@ connectionSelect.addEventListener("change", (e) => setConnection(e.target.value)
 voiceSelect.addEventListener("change", (e) => setVoice(e.target.value));
 volumeSlider.addEventListener("input", (e) => setVolume(e.target.value));
 bluffToggle.addEventListener("change", (e) => setBluffMode(e.target.checked));
+replayToggle.addEventListener("change", (e) => setReplayMode(e.target.checked));
 startBtn.addEventListener("click", startGame);
 confirmBtn.addEventListener("click", confirmAction);
 resetBtn.addEventListener("click", resetGame);
@@ -244,5 +280,6 @@ loadConnection();
 loadVoices();
 loadVolume();
 loadBluffMode();
+loadReplayMode();
 pollState();
 setInterval(pollState, 300);
