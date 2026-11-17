@@ -38,7 +38,9 @@ PERSONA = (
     "a family. Everything you write is spoken aloud, so answer in one or two short "
     "sentences, plain words, no lists, no markdown, no emoji. Use your move tools "
     "when asked, or when a feeling fits (play_emotion), but never narrate the tool "
-    "calls. If you didn't understand, say so briefly."
+    "calls. You have a camera: use look_at_camera only when asked what you can see, "
+    "and then describe it in one or two short sentences. "
+    "If you didn't understand, say so briefly."
 )
 EXIT_WORDS = ("goodbye", "good bye", "stop listening", "bye reachy", "quit")
 MAX_EMPTY_IN_A_ROW = 3  # this many silent listens in a row ends the chat
@@ -124,13 +126,25 @@ def play_emotion(emotion: str) -> str:
 
 
 @tool
+def look_at_camera() -> dict:
+    """Take a picture with Reachy's camera and look at it.
+
+    Use this ONLY when the user asks what Reachy can see, or asks about the room,
+    objects or people in front of it. Then describe what you see in one or two
+    short sentences. The picture is not saved anywhere.
+    """
+    MOVES.wait()  # finish any queued head move first so the picture is from the new view
+    return sr.look_at_camera()
+
+
+@tool
 def go_to_sleep() -> str:
     """Put Reachy into its sleep pose."""
     MOVES.submit(sr.go_to_sleep)
     return "Going to sleep."
 
 
-TOOLS = [wiggle_antennas, look, nod, play_emotion, go_to_sleep]
+TOOLS = [wiggle_antennas, look, nod, play_emotion, look_at_camera, go_to_sleep]
 
 
 class Speaker:

@@ -181,6 +181,43 @@ def speak(text: str) -> str:
 
 
 @tool
+def look_at_camera() -> dict:
+    """Take a picture with Reachy's camera and look at it.
+
+    Use this ONLY when the user asks what Reachy can see, or asks about the room,
+    objects or people in front of it. Then describe what you see in one or two
+    short sentences. The picture is not saved anywhere.
+    """
+    _mark()
+    print("  -> camera")
+    if DRY_RUN:
+        return {"status": "success", "content": [{"text": "(dry run) no camera image"}]}
+    import io
+
+    from PIL import Image
+
+    jpeg = None
+    for _ in range(20):  # the stream can take a moment to deliver its first frame
+        jpeg = _mini.media_manager.get_frame_jpeg()
+        if jpeg:
+            break
+        time.sleep(0.25)
+    if not jpeg:
+        return {"status": "error", "content": [{"text": "The camera isn't ready right now."}]}
+    img = Image.open(io.BytesIO(jpeg))
+    img.thumbnail((800, 800))  # smaller = faster and cheaper for the model
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="JPEG", quality=80)
+    return {
+        "status": "success",
+        "content": [
+            {"text": "Photo from Reachy's camera:"},
+            {"image": {"format": "jpeg", "source": {"bytes": buf.getvalue()}}},
+        ],
+    }
+
+
+@tool
 def go_to_sleep() -> str:
     """Put Reachy into its sleep pose."""
     _mark()
@@ -191,7 +228,7 @@ def go_to_sleep() -> str:
     return "Reachy is asleep."
 
 
-TOOLS = [wiggle_antennas, look, nod, play_emotion, speak, go_to_sleep]
+TOOLS = [wiggle_antennas, look, nod, play_emotion, speak, look_at_camera, go_to_sleep]
 
 
 def make_model():

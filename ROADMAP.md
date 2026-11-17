@@ -103,16 +103,29 @@ Wire hearing, the agent and speaking into one loop.
 
 ---
 
-## Phase 4 — See 🔜
+## Phase 4 — See ✅ (core)
 
 Give the agent eyes.
 
-- [ ] `look_at_camera` tool: grab a frame and send it to Claude as an image ("what do you see?")
-- [ ] Head tracking as a tool (the SDK exposes start/stop head tracking — to be verified)
-- [ ] Reuse the motion-detection code from `reachy_says` where it fits
-- ❓ **Decision:** only look when asked (cheap, private) versus continuous watching (costly)
+- [x] `look_at_camera` tool: grab a frame and send it to Claude as an image ("what do you see?")
+- [ ] Head tracking as a tool (the SDK exposes `start_head_tracking` / `stop_head_tracking`; not built,
+      needs care so it does not fight the move tools) — **deferred**
+- [ ] Reuse the motion-detection code from `reachy_says` where it fits — **deferred**
+- [x] Decision: look only when asked (cheap, private). The system prompt enforces it.
 
 **Done when:** "what's in front of you?" gets a correct spoken answer.
+
+**Findings:**
+- `media_manager.get_frame_jpeg()` returns a 1280x720 JPEG within about a second of connecting.
+- A Strands tool can return an image straight to Claude (`{"image": {"format": "jpeg", "source":
+  {"bytes": ...}}}`). The frame is shrunk to 800 px first to keep it fast and cheap; nothing is saved.
+- Tested by voice: Reachy described the room and read seven book titles off a shelf. It correctly
+  said it could not read small text on a distant box.
+- Camera turns start speaking after about 2.7 to 7 s (plain chat is about 2 s); the picture upload
+  and any head move account for the extra.
+- The converse wrapper waits for queued head moves before taking the picture, so "look up and tell
+  me what you see" shoots from the new angle.
+- Privacy: each look sends one photo to Anthropic's API. The tool only runs when asked.
 
 ---
 
