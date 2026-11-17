@@ -25,6 +25,7 @@ from strands import Agent, tool
 SYSTEM_PROMPT = (
     "You control a small expressive robot named Reachy Mini. Do what the user "
     "asks by calling your tools, in order. Only call tools that were asked for. "
+    "Use the speak tool only when asked to say something. "
     "Reply in one short sentence when done."
 )
 
@@ -95,6 +96,35 @@ def nod(times: int = 2) -> str:
 
 
 @tool
+def speak(text: str) -> str:
+    """Say something out loud through Reachy's speaker.
+
+    Args:
+        text: What to say. Keep it to one or two short sentences.
+    """
+    print(f"  -> say: {text!r}")
+    if DRY_RUN:
+        return f"(dry run) said: {text}"
+    import wave
+
+    # Local Piper TTS (free, no network), reused from apps/voice_gesture.
+    from voice_gesture.tts import speak as synthesize
+
+    path = synthesize(text)
+    try:
+        with wave.open(str(path), "rb") as w:
+            duration = w.getnframes() / w.getframerate()
+        _mini.media_manager.play_sound(str(path))  # fire-and-forget
+        time.sleep(duration + 0.3)
+    finally:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass  # Windows may still hold the temp file briefly
+    return f"Said: {text}"
+
+
+@tool
 def go_to_sleep() -> str:
     """Put Reachy into its sleep pose."""
     print("  -> sleep")
@@ -126,7 +156,7 @@ def run_agent(prompt: str) -> None:
     agent = Agent(
         model=make_model(),
         system_prompt=SYSTEM_PROMPT,
-        tools=[wiggle_antennas, look, nod, go_to_sleep],
+        tools=[wiggle_antennas, look, nod, speak, go_to_sleep],
     )
     agent(prompt)
     print()
