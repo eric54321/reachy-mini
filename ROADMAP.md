@@ -74,22 +74,36 @@ Get clean speech from the robot's microphone into text.
 
 ---
 
-## Phase 3 — Conversation loop 🔜
+## Phase 3 — Conversation loop ✅
 
 Wire hearing, the agent and speaking into one loop.
 
-- [ ] Loop: listen → transcribe → agent → speak, with the agent still able to move
-- [ ] Stop the robot hearing itself (mute the mic while speaking, or echo handling)
-- [ ] Latency work: speak the first sentence while the rest is still being generated
-- [ ] Persona and system prompt: short answers, friendly, knows it is a small robot
-- [ ] Idle behavior: look attentive while listening, a small "thinking" move while waiting
-- [ ] Safe words and limits: "stop" halts motion, a cap on tool calls per turn
+- [x] Loop: listen → transcribe → agent → speak, with the agent still able to move
+- [x] Stop the robot hearing itself (mute the mic while speaking, or echo handling)
+- [x] Latency work: speak the first sentence while the rest is still being generated
+- [x] Persona and system prompt: short answers, friendly, knows it is a small robot
+- [x] Idle behavior: look attentive while listening, a small "thinking" move while waiting
+- [~] Safe words and limits: "goodbye" / "stop listening" end the chat (done); a "stop" that halts
+      a move in progress and a cap on tool calls per turn are **not built yet**
 
 **Done when:** a back-and-forth conversation of several turns works with natural pauses.
 
+**Findings:**
+- `scripts/converse.py` runs the whole loop; say "goodbye" or stay silent for three listens to end it.
+- Speed: Reachy starts speaking about 1.5 to 3 s after you stop talking (STT ~0.5 s). Replies are
+  streamed and spoken sentence by sentence.
+- Move tools run in a background queue and return immediately, so Reachy talks while it moves.
+  Before they did, a reply with a move started speaking 4 to 9 s late.
+- The mic only records while Reachy is silent, which avoids hearing itself.
+- First words were being lost because the beep drain discarded 0.45 s; it is now 0.28 s. The
+  speech model is also hinted with the usual commands. Moving to `small.en` (about 250 MB) is the
+  next step if mishearing continues.
+- Piper cannot laugh; "Ha ha" is spoken as words and the laughing animation does the rest.
+- `HEAR_THRESHOLD` (default 0.004) tunes automatic end-of-speech detection.
+
 ---
 
-## Phase 4 — See ⬜
+## Phase 4 — See 🔜
 
 Give the agent eyes.
 

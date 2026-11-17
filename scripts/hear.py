@@ -28,7 +28,10 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 SAMPLE_RATE = 16000
 # Biases Whisper toward the robot's name ("Reachy" otherwise comes out "Richie").
-PROMPT_HINT = "Reachy, Reachy Mini."
+PROMPT_HINT = (
+    "Reachy, Reachy Mini. Act happy. Look left. Look right. Look up. Look down. "
+    "Nod your head. Wiggle your antennas. Say hello. Goodbye."
+)
 
 _model = None
 
@@ -65,7 +68,9 @@ def _cue(mini, mm) -> None:
     try:
         mini.goto_target(antennas=np.deg2rad([40, -40]), duration=0.25)
         mm.play_sound(path)
-        end = time.time() + 0.45
+        # Discard only the beep itself (0.15 s + a little latency). A longer drain
+        # cut off the first word of people who start talking right on the beep.
+        end = time.time() + 0.28
         while time.time() < end:  # drain (discard) what the mic hears during the beep
             mm.get_audio_sample()
             time.sleep(0.01)

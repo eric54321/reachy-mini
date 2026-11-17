@@ -23,9 +23,15 @@ import threading
 import time
 import wave
 
+import logging
+
 import hear
 import strands_reachy as sr
-from strands import Agent
+from strands import Agent, tool
+
+# The SDK logs a lot of GStreamer/WebRTC INFO lines, plus a harmless "No Reachy
+# Mini Audio USB device found" error. Hide them so the conversation is readable.
+logging.getLogger("reachy_mini").setLevel(logging.CRITICAL)
 
 PERSONA = (
     "You are Reachy Mini, a small, friendly, curious robot talking out loud with "
@@ -38,7 +44,93 @@ EXIT_WORDS = ("goodbye", "good bye", "stop listening", "bye reachy", "quit")
 MAX_EMPTY_IN_A_ROW = 3  # this many silent listens in a row ends the chat
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
-TOOLS = [sr.wiggle_antennas, sr.look, sr.nod, sr.play_emotion, sr.go_to_sleep]
+
+
+class MoveWorker:
+    """Runs robot moves one at a time in the background.
+
+    The move tools return immediately, so Claude can start talking while the
+    robot moves instead of waiting for the move to finish first.
+    """
+
+    def __init__(self) -> None:
+        self.q: queue.Queue = queue.Queue()
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def submit(self, tool, **kwargs) -> None:
+        self.q.put((tool, kwargs))
+
+    def wait(self) -> None:
+        self.q.join()
+
+    def _run(self) -> None:
+        while True:
+            tool, kwargs = self.q.get()
+            try:
+                tool(**kwargs)
+            except Exception as e:
+                print(f"[move error] {type(e).__name__}: {e}")
+            finally:
+                self.q.task_done()
+
+
+MOVES = MoveWorker()
+
+
+@tool
+def wiggle_antennas(times: int = 2) -> str:
+    """Wiggle Reachy's antennas back and forth.
+
+    Args:
+        times: How many wiggles (1-5).
+    """
+    MOVES.submit(sr.wiggle_antennas, times=times)
+    return "Started wiggling antennas."
+
+
+@tool
+def look(direction: str) -> str:
+    """Turn Reachy's head to look in a direction.
+
+    Args:
+        direction: One of "left", "right", "up", "down", "center".
+    """
+    MOVES.submit(sr.look, direction=direction)
+    return f"Started looking {direction}."
+
+
+@tool
+def nod(times: int = 2) -> str:
+    """Nod Reachy's head yes.
+
+    Args:
+        times: How many nods (1-5).
+    """
+    MOVES.submit(sr.nod, times=times)
+    return "Started nodding."
+
+
+@tool
+def play_emotion(emotion: str) -> str:
+    """Act out an emotion with Reachy's built-in expressive animations.
+
+    Args:
+        emotion: One of happy, sad, excited, curious, confused, surprised, angry,
+            scared, tired, proud, shy, loving, bored, grateful, annoyed, laughing,
+            thoughtful, disgusted, relieved, lonely.
+    """
+    MOVES.submit(sr.play_emotion, emotion=emotion)
+    return f"Started the {emotion} expression."
+
+
+@tool
+def go_to_sleep() -> str:
+    """Put Reachy into its sleep pose."""
+    MOVES.submit(sr.go_to_sleep)
+    return "Going to sleep."
+
+
+TOOLS = [wiggle_antennas, look, nod, play_emotion, go_to_sleep]
 
 
 class Speaker:
@@ -117,6 +209,12 @@ def think_pose(mini) -> None:
 def main() -> None:
     from reachy_mini import ReachyMini
 
+    # Child loggers (reachy_mini.media.*) are created on import and carry their own
+    # level, so silence each one rather than just the parent.
+    for name in list(logging.root.manager.loggerDict):
+        if name.startswith("reachy_mini"):
+            logging.getLogger(name).setLevel(logging.CRITICAL)
+
     model = sr.make_model()  # exits early with a clear message if the key is missing
     hear.get_model()  # load Whisper before connecting so the first turn is quick
 
@@ -169,6 +267,7 @@ def main() -> None:
                 print(f"\n[error] {type(e).__name__}: {e}")
                 speaker.say("Sorry, something went wrong.")
             speaker.wait()
+            MOVES.wait()  # let queued moves finish before the beep / mic cue
             mini.goto_target(antennas=[0.0, 0.0], duration=0.3)
             first = speaker.first_audio_at
             print(
