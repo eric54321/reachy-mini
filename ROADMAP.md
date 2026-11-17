@@ -129,7 +129,35 @@ Give the agent eyes.
 
 ---
 
-## Phase 5 — Games and apps ⬜
+## Robotics learning path (strands-robots) 🔜
+
+Learn the robotics half of Strands using only Reachy Mini (in simulation first). Phase 5 (games
+and apps) is deferred in favour of this. Installed: `strands-robots[mujoco]` 0.6.0 in the
+`reachy` env (it upgraded `mujoco` 3.3.0 to 3.17.0; the voice stack and the sim daemon still work).
+
+1. [x] **Reachy in the library's simulation.** `scripts/robots_sim_reachy.py`.
+2. [ ] A custom **policy** (scripted look-at, then a vision-driven one)
+3. [ ] **Agent tools** over the simulated Reachy (`robot.tool`, `sim.tool`) so the agent picks skills
+4. [ ] **Record and replay** a behaviour as a LeRobot dataset
+5. [ ] The library's **safety manifest and e-stop**
+6. [ ] Bridge to the **real Reachy** (needs a hardware driver; not yet researched)
+7. [ ] Later: the **SO-100** (a first-class supported robot) and Reachy + SO-100 together
+
+**Step 1 findings:**
+- `Robot(path_to_mjcf)` loads Reachy's own model, which ships inside the `reachy_mini` package
+  (`descriptions/reachy_mini/mjcf/reachy_mini.xml`). Reachy Mini is not in the library's registry.
+- The library sees 9 actuated joints: `yaw_body`, `stewart_1..6` (the head), `right_antenna`,
+  `left_antenna`. Antennas and body yaw hit their targets exactly.
+- The head is a Stewart platform, so a head pose must become six leg angles first. The SDK's
+  `AnalyticalKinematics.ik()` does that and `.fk()` checks the result; the simulated head landed
+  within a few degrees of the commanded pose.
+- The three concepts: a `Simulation` is the world, a `Robot` is a body in it (`observe()`,
+  `act()`, `run()`), a `Policy` is a function from observation to joint targets.
+- Speed: 5.2 s of robot time ran in about 2 s of wall time including startup.
+
+---
+
+## Phase 5 — Games and apps (deferred) ⬜
 
 - [ ] Make the agent a game master for Reachy Says (the AI picks and announces rounds)
 - [ ] Expose the agent as a small web UI alongside the existing app pages
