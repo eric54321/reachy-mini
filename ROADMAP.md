@@ -46,23 +46,35 @@ Small, low-risk steps so the foundation is trustworthy before adding hearing.
 
 ---
 
-## Phase 2 — Hear 🔜
+## Phase 2 — Hear ✅
 
 Get clean speech from the robot's microphone into text.
 
-- ❓ **Verify** how to capture audio from the robot via the SDK (`media_manager`). Not yet checked.
-      The `No Reachy Mini Audio USB device found!` log line on this PC needs to be understood first.
-- [ ] Capture: push-to-talk first (press Enter, speak, press Enter), voice activity detection later
-- [ ] Speech-to-text, local first: `faster-whisper` or similar (free, offline)
-- ❓ **Decision:** local STT versus a paid cloud STT. Anthropic's API does not do speech-to-text,
-      so this is a separate component either way.
-- [ ] A throwaway script that records 5 seconds and prints the transcript
+- [x] Verified how to capture audio from the robot via the SDK (`media_manager`); see Findings.
+- [x] Capture: push-to-talk first (press Enter, speak, press Enter), voice activity detection later
+- [x] Speech-to-text, local first: `faster-whisper` or similar (free, offline)
+- [x] Decision: local STT (Anthropic's API does not do speech-to-text, so it is a separate component
+      either way; local is free and fast enough).
+- [x] A throwaway script that records 5 seconds and prints the transcript
 
 **Done when:** speaking a sentence to the robot prints a correct transcript in under ~2 seconds.
 
+**Findings (resolved):**
+- Capture works via `media_manager.start_recording()` / `get_audio_sample()`: 16 kHz, 2 channels
+  that are identical (effectively mono). The `No Reachy Mini Audio USB device found!` log line is
+  harmless; capture and speaker still work.
+- STT decision: local `faster-whisper` (`base.en`, int8, CPU), about 0.5 s for a few seconds of
+  speech. Install with `pip install faster-whisper` in the `reachy` env.
+- Speak within ~30 cm; quiet or distant speech gives an empty transcript. Silence is skipped
+  because Whisper invents text from noise.
+- Users need a cue for when to talk: the robot now beeps and lifts its antennas, and audio
+  captured during the beep is discarded.
+- Still open: automatic end-of-speech detection (moved into Phase 3).
+- Code: `scripts/hear.py` (`listen(mini)` is the function Phase 3 imports).
+
 ---
 
-## Phase 3 — Conversation loop ⬜
+## Phase 3 — Conversation loop 🔜
 
 Wire hearing, the agent and speaking into one loop.
 
