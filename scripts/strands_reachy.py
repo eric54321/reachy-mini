@@ -9,7 +9,7 @@ Settings come from the environment, or from the repo's gitignored .env:
     LLM_MODEL              model id (default: claude-haiku-5-5)
     REACHY_MINI_HOST       robot IP (default 192.168.50.216; mDNS and SDK
                            auto-discovery don't work on this network)
-    REACHY_VOLUME          speaker volume 0-100, set on connect (default 40)
+    REACHY_VOLUME          speaker volume 0-100, set on connect (default 50)
     LLM_PROVIDER           anthropic (default) | ollama (deferred, untested)
 
 Each turn prints how long the first tool call and the whole reply took, and
@@ -312,7 +312,7 @@ def main() -> None:
         # accepted but nothing moves.
         mini.enable_motors()
         time.sleep(1.0)
-        set_volume(mini, int(os.environ.get("REACHY_VOLUME", "40")))
+        set_volume(mini, int(os.environ.get("REACHY_VOLUME", "50")))
         chat(agent, args.prompt)
     finally:
         mini_ctx.__exit__(None, None, None)
