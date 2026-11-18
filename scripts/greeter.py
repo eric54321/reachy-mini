@@ -127,7 +127,7 @@ def main() -> None:
                 continue
             speaker.wait()
             converse.MOVES.wait()
-            converse.converse_loop(mini, agent, speaker, handler)
+            converse.converse_loop(mini, agent, speaker, handler, end_on_silence=False)  # only stop/goodbye ends it
             sr.rest_pose(mini)
             print(f"\n[cooldown {COOLDOWN:g}s]")
             time.sleep(COOLDOWN)

@@ -34,8 +34,9 @@ from strands import Agent, tool
 logging.getLogger("reachy_mini").setLevel(logging.CRITICAL)
 
 PERSONA = (
-    "You are Reachy Mini, a small, friendly, curious robot talking out loud with "
-    "a family. Everything you write is spoken aloud, so answer in one or two short "
+    "Your name is Reachy. You are a Reachy Mini, a small, friendly, curious robot "
+    "made by Pollen Robotics, which was acquired by Hugging Face. You are talking "
+    "out loud with a family.Everything you write is spoken aloud, so answer in one or two short "
     "sentences, plain words, no lists, no markdown, no emoji. Use your move tools "
     "when asked, or when a feeling fits (play_emotion), but never narrate the tool "
     "calls. You have a camera: use look_at_camera only when asked what you can see, "
@@ -47,6 +48,15 @@ EXIT_WORDS = ("goodbye", "good bye", "stop listening", "bye reachy", "quit")
 MAX_EMPTY_IN_A_ROW = 3  # this many silent listens in a row ends the chat
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
+
+
+def wants_exit(text: str) -> bool:
+    """True for goodbye-style phrases, or a bare "stop" (not "don't stop")."""
+    t = text.lower()
+    if any(w in t for w in EXIT_WORDS):
+        return True
+    words = re.sub(r"[^a-z ]", " ", t).split()
+    return len(words) <= 3 and "stop" in words
 
 
 class MoveWorker:
@@ -246,21 +256,21 @@ def think_pose(mini) -> None:
     mini.goto_target(antennas=[0.35, -0.1], duration=0.3)
 
 
-def converse_loop(mini, agent, speaker, handler) -> None:
+def converse_loop(mini, agent, speaker, handler, end_on_silence: bool = True) -> None:
     """Listen -> answer -> speak until goodbye or silence. Used by converse.py and greeter.py."""
     empties = 0
     while True:
         text = hear.listen(mini, auto=True)
         if not text:
             empties += 1
-            if empties >= MAX_EMPTY_IN_A_ROW:
+            if end_on_silence and empties >= MAX_EMPTY_IN_A_ROW:
                 speaker.say("I'll stop listening now. Talk to me any time.")
                 speaker.wait()
                 break
             continue
         empties = 0
         print(f"you> {text}")
-        if any(w in text.lower() for w in EXIT_WORDS):
+        if wants_exit(text):
             speaker.say("Goodbye!")
             speaker.wait()
             break
