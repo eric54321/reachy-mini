@@ -30,7 +30,8 @@ SAMPLE_RATE = 16000
 # Biases Whisper toward the robot's name ("Reachy" otherwise comes out "Richie").
 PROMPT_HINT = (
     "Reachy, Reachy Mini. Act happy. Look left. Look right. Look up. Look down. "
-    "Nod your head. Wiggle your antennas. Say hello. Goodbye."
+    "Nod your head. Wiggle your antennas. Say hello. Goodbye. "
+    "Louder. Quieter. Turn the volume up. Set the volume to 70."
 )
 
 _model = None

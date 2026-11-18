@@ -40,6 +40,7 @@ PERSONA = (
     "when asked, or when a feeling fits (play_emotion), but never narrate the tool "
     "calls. You have a camera: use look_at_camera only when asked what you can see, "
     "and then describe it in one or two short sentences. "
+    "If asked to be louder or quieter, use set_volume, then answer in your new volume. "
     "If you didn't understand, say so briefly."
 )
 EXIT_WORDS = ("goodbye", "good bye", "stop listening", "bye reachy", "quit")
@@ -137,6 +138,31 @@ def look_at_camera() -> dict:
     return sr.look_at_camera()
 
 
+_volume = int(os.environ.get("REACHY_VOLUME", "50"))
+
+
+@tool
+def set_volume(level: int = -1, change: str = "") -> str:
+    """Change Reachy's speaking volume when the user asks (louder, quieter, set to N).
+
+    Args:
+        level: Exact volume 5-100 if the user names a number or says max/half; else -1.
+        change: "up" or "down" for louder/quieter (a step of 15); else empty.
+    """
+    global _volume
+    if level >= 0:
+        new = level
+    elif change == "up":
+        new = _volume + 15
+    elif change == "down":
+        new = _volume - 15
+    else:
+        return f"Volume is {_volume}. Give a level or up/down."
+    _volume = max(5, min(100, new))
+    sr.set_volume(sr._mini, _volume)
+    return f"Volume is now {_volume} out of 100."
+
+
 @tool
 def go_to_sleep() -> str:
     """Put Reachy into its sleep pose."""
@@ -144,7 +170,7 @@ def go_to_sleep() -> str:
     return "Going to sleep."
 
 
-TOOLS = [wiggle_antennas, look, nod, play_emotion, look_at_camera, go_to_sleep]
+TOOLS = [wiggle_antennas, look, nod, play_emotion, look_at_camera, set_volume, go_to_sleep]
 
 
 class Speaker:
@@ -220,6 +246,47 @@ def think_pose(mini) -> None:
     mini.goto_target(antennas=[0.35, -0.1], duration=0.3)
 
 
+def converse_loop(mini, agent, speaker, handler) -> None:
+    """Listen -> answer -> speak until goodbye or silence. Used by converse.py and greeter.py."""
+    empties = 0
+    while True:
+        text = hear.listen(mini, auto=True)
+        if not text:
+            empties += 1
+            if empties >= MAX_EMPTY_IN_A_ROW:
+                speaker.say("I'll stop listening now. Talk to me any time.")
+                speaker.wait()
+                break
+            continue
+        empties = 0
+        print(f"you> {text}")
+        if any(w in text.lower() for w in EXIT_WORDS):
+            speaker.say("Goodbye!")
+            speaker.wait()
+            break
+
+        t0 = time.perf_counter()
+        speaker.first_audio_at = None
+        think_pose(mini)
+        print("reachy> ", end="", flush=True)
+        try:
+            agent(text)
+            handler.flush()
+        except Exception as e:
+            handler.buf = ""
+            print(f"\n[error] {type(e).__name__}: {e}")
+            speaker.say("Sorry, something went wrong.")
+        speaker.wait()
+        MOVES.wait()  # let queued moves finish before the beep / mic cue
+        mini.goto_target(antennas=[0.0, 0.0], duration=0.3)
+        first = speaker.first_audio_at
+        print(
+            f"\n[time] to first spoken word {'-' if first is None else f'{first - t0:.1f}s'}, "
+            f"turn total {time.perf_counter() - t0:.1f}s"
+        )
+        time.sleep(0.4)  # let the room go quiet before listening again
+
+
 def main() -> None:
     from reachy_mini import ReachyMini
 
@@ -252,43 +319,7 @@ def main() -> None:
 
         speaker.say("Hi! I'm listening. Talk to me after the beep.")
         speaker.wait()
-        empties = 0
-        while True:
-            text = hear.listen(mini, auto=True)
-            if not text:
-                empties += 1
-                if empties >= MAX_EMPTY_IN_A_ROW:
-                    speaker.say("I'll stop listening now. Talk to me any time.")
-                    speaker.wait()
-                    break
-                continue
-            empties = 0
-            print(f"you> {text}")
-            if any(w in text.lower() for w in EXIT_WORDS):
-                speaker.say("Goodbye!")
-                speaker.wait()
-                break
-
-            t0 = time.perf_counter()
-            speaker.first_audio_at = None
-            think_pose(mini)
-            print("reachy> ", end="", flush=True)
-            try:
-                agent(text)
-                handler.flush()
-            except Exception as e:
-                handler.buf = ""
-                print(f"\n[error] {type(e).__name__}: {e}")
-                speaker.say("Sorry, something went wrong.")
-            speaker.wait()
-            MOVES.wait()  # let queued moves finish before the beep / mic cue
-            mini.goto_target(antennas=[0.0, 0.0], duration=0.3)
-            first = speaker.first_audio_at
-            print(
-                f"\n[time] to first spoken word {'-' if first is None else f'{first - t0:.1f}s'}, "
-                f"turn total {time.perf_counter() - t0:.1f}s"
-            )
-            time.sleep(0.4)  # let the room go quiet before listening again
+        converse_loop(mini, agent, speaker, handler)
     except KeyboardInterrupt:
         print("\nbye")
     finally:
