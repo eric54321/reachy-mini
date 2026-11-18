@@ -12,7 +12,7 @@ The picture is only sent to Claude when motion triggers a greeting, and is not
 saved. He is told not to identify anyone by their face.
 
 Settings (env or .env):
-    GREET_MOTION     motion sensitivity, mean pixel change 0-255 (default 6; lower = jumpier)
+    GREET_MOTION     motion sensitivity, mean pixel change 0-255 (default 1.0; lower = jumpier)
     GREET_COOLDOWN   seconds before greeting again after a chat (default 120)
     REACHY_VOLUME, REACHY_MINI_HOST, REACHY_ANTHROPIC_KEY  as in the other scripts
 
@@ -28,6 +28,8 @@ import time
 import numpy as np
 from PIL import Image
 from strands import Agent
+
+os.environ.setdefault("REACHY_VOLUME", "80")  # greeter default; must be set before importing converse
 
 import converse
 import hear
@@ -47,9 +49,9 @@ OPENER_PROMPT = (
     "hi and ask who is there."
 )
 
-MOTION = float(os.environ.get("GREET_MOTION", "6"))
+MOTION = float(os.environ.get("GREET_MOTION", "1.0"))
 COOLDOWN = float(os.environ.get("GREET_COOLDOWN", "120"))
-HITS_NEEDED = 3  # consecutive motion checks, so one flicker doesn't trigger
+HITS_NEEDED = 2  # consecutive motion checks, so one flicker doesn't trigger
 CHECK_EVERY = 0.5
 
 
@@ -97,6 +99,7 @@ def main() -> None:
         mini.enable_motors()
         time.sleep(1.0)
         sr.set_volume(mini, int(os.environ.get("REACHY_VOLUME", "50")))
+        sr.rest_pose(mini)  # a previous run may have left the head tilted (dark camera)
 
         speaker = converse.Speaker(mini)
         handler = converse.StreamHandler(speaker)

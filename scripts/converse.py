@@ -312,6 +312,7 @@ def main() -> None:
         mini.enable_motors()
         time.sleep(1.0)
         sr.set_volume(mini, int(os.environ.get("REACHY_VOLUME", "50")))
+        sr.rest_pose(mini)  # a previous run may have left the head tilted (dark camera)
 
         speaker = Speaker(mini)
         handler = StreamHandler(speaker)
