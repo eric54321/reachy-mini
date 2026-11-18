@@ -292,6 +292,8 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nbye")
     finally:
+        MOVES.wait()
+        sr.rest_pose(mini)
         ctx.__exit__(None, None, None)
 
 

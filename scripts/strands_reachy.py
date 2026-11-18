@@ -57,12 +57,28 @@ def _mark() -> None:
 
 def _move(label: str, **kwargs) -> str:
     """Run one goto_target move (or just print it in dry-run mode)."""
+    global _asleep
     print(f"  -> {label}")
     if DRY_RUN:
         return f"(dry run) {label}"
+    _asleep = False
     _mini.goto_target(**kwargs)
     time.sleep(kwargs.get("duration", 0.5) + 0.2)
     return f"Done: {label}"
+
+
+_asleep = False  # True after go_to_sleep, so exit doesn't wake the robot back up
+
+
+def rest_pose(mini) -> None:
+    """Return head and antennas to neutral. Call on exit so the head isn't left tilted."""
+    if _asleep or mini is None:
+        return
+    try:
+        mini.goto_target(head=_pose(), antennas=[0.0, 0.0], duration=0.8)
+        time.sleep(1.0)
+    except Exception as e:
+        print(f"(could not return to neutral: {e})")
 
 
 def _pose(**kw):
@@ -220,11 +236,13 @@ def look_at_camera() -> dict:
 @tool
 def go_to_sleep() -> str:
     """Put Reachy into its sleep pose."""
+    global _asleep
     _mark()
     print("  -> sleep")
     if DRY_RUN:
         return "(dry run) sleep"
     _mini.goto_sleep()
+    _asleep = True
     return "Reachy is asleep."
 
 
@@ -352,6 +370,7 @@ def main() -> None:
         set_volume(mini, int(os.environ.get("REACHY_VOLUME", "50")))
         chat(agent, args.prompt)
     finally:
+        rest_pose(mini)
         mini_ctx.__exit__(None, None, None)
 
 
